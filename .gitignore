@@ -1,0 +1,25 @@
+# ── 虚拟环境 / 字节码 ────────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# ── 抓包与凭据产物（绝不要提交）─────────────────────────────────
+*.pcap
+*.pcapng
+client.pcap
+our-replies.pcap
+*.jsonl
+*.log
+creds.*
+*.db
+*.sqlite
+*.sqlite3
+oui.txt
+
+# ── 本地/编辑器 ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

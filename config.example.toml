@@ -1,0 +1,116 @@
+# PPPoE 劫持 v2 配置文件（TOML，Python 3.11+ 用标准库 tomllib 读取）
+# 用法: python pppoe_hijack_py3.py -c config.example.toml -i "以太网"
+# 优先级: 内置默认值 < 本文件 < 命令行参数
+#
+# 注意: 只在你自己的实验环境/授权测试中使用。
+
+[pppoe]
+# 监听网卡（也可用 -i 覆盖；网卡名可用 --list-ifaces 查）
+#iface = "以太网"
+
+# 伪装源 MAC。留空 = 用 0a:0a:0a:0a:0a:0a 起步，并靠 learn_ac 学真 BRAS
+#mac = "0a:0a:0a:0a:0a:0a"
+
+# 从真 BRAS 的 PADO/PADS 里学它的 MAC 与 AC-Name，然后冒充它（比固定假 MAC 隐蔽得多）
+learn_ac = true
+
+# PADO/PADS 里的 Service-Name（空 = 不限制，回应所有客户端）
+service_name = ""
+
+# PADO/PADS 里的 AC-Name，也是 CHAP Challenge 里的 Name；learn_ac 时会被真 BRAS 覆盖
+ac_name = "^_^"
+
+# sessionid: 0 = 每个客户端自动分配一个互不相同的
+sessionid = 0
+
+# 会话空闲多少秒后回收（0 = 不回收）。原版从不清理 clientMap，会导致同一客户端重拨时漏抓
+session_ttl = 120
+
+# 对方送来 LCP-Config-Req 时的处理:
+#   nak    = 规范做法：Ack 能接受的选项 + Nak 塞入我们的认证协议（推荐）
+#   reject = 复刻原版：一律 Reject，再下发我方 Config-Req
+lcp_mode = "nak"
+
+# true = 去掉原版 LCP-Req 里那 4 个尾 0，长度字段按 RFC 1661 写 4+len(opts)
+strict_rfc = false
+
+# 认证协议优先顺序。第一个是首选，客户端 Nak/Reject 时按顺序往后换。
+#    pap       = 明文，最省事但客户端支持率在下降
+#    mschapv2  = 目前绝大多数宽带客户端；凭据可离线还原/爆破
+#    chap      = 标准 MD5-CHAP
+#    mschapv1  = 老客户端
+auth_order = "pap,mschapv2,chap,mschapv1"
+auth_retry = 3
+
+# 我方 LCP-Config-Req 的重传间隔与上限（原版从不重传，丢了就卡死）
+lcp_retry = 3.0
+lcp_maxretry = 10
+
+# 收到 PAP 后:
+#   nak = 原版行为，客户端会反复重拨（能反复收到明文，但会话建不起来）
+#   ack = 让客户端以为过了认证，接着做 IPCP 把它留在会话里
+pap_mode = "nak"
+
+# CHAP 应答后回 Failure（原版风格）还是 Success（配合 ipcp 留住客户端）
+chap_reply = "fail"
+
+# IPCP: auto(=pap_mode=ack 或 chap_reply=success 时开) / on / off
+ipcp = "auto"
+ipcp_local = "10.0.0.1"        # 我们（伪网关）的地址
+ipcp_peer = "10.0.0.2"         # 发给客户端的地址
+
+# 发包限速（包/秒），0 = 不限。防止把实验网段刷爆
+rate = 200
+
+# BPF 目的地址过滤: auto(mac 未指定→any) / strict(更快) / any
+dst_filter = "auto"
+
+# 凭据落盘文件: *.db/*.sqlite/*.sqlite3 = SQLite，其它扩展名 = JSONL
+store = "creds.jsonl"
+
+# 统计打印间隔秒（0 = 关闭）
+stats = 30
+
+# ============================================================ 现代光猫/路由器（v2.1）
+# 一整组开关可以先用 profile 起手，再被下面的键或命令行覆盖:
+#   legacy = 2016 原版行为（无 VLAN、只 PAP、MRU 1480、字节级复刻）
+#   modern = 家用双栈路由器（VLAN 跟随 + IPv6CP + 802.1X/DHCP 指纹 + MRU 1492）
+#   ont    = 光猫桥接 + 运营商 VLAN（VLAN 跟随 + 学真 BRAS，不带 IPv6CP）
+#profile = "ont"
+
+# VLAN: off = 不带 tag（原版行为）/ auto = 跟随客户端 / 0-4095 = 强制插入该 VLAN
+#vlan = "auto"
+#vlan_prio = 0                  # 802.1p 优先级（0-7）
+
+# MRU: 我方在 LCP 里请求的最大接收单元。1480 = 原版字节(05c8)；现网常见 1492
+#mru = 1492
+
+# PPP-Max-Payload(0x0120, RFC 4638): 0 = 不宣告（默认）；1500 = 支持 baby jumbo
+#max_payload = 0
+
+# 服务名严格模式: true 时客户端要的 Service-Name 不在 service_name 列表里就回
+# PADS + Service-Name-Error(0x0201)；service_name 支持逗号分隔多个
+#service_strict = false
+
+# AC-Cookie(0x0104): 现代 BRAS/OLT 会要求 PADR 回带 cookie（宽容模式，不回也不丢包）
+#ac_cookie = false
+
+# Relay-Session-Id(0x0110) 透传（PPPoE 中继/汇聚场景需要）
+#relay_sid = true
+
+# 多拨: 同一 MAC 允许多条会话（光猫双拨/多 WAN）
+#multi_session = true
+#max_sessions = 8
+
+# 802.1X（EAPOL）旁听: log = 记录 EAP-Response/Identity（往往就是宽带账号），从不回应
+#eapol = "log"
+
+# DHCP 旁听: log = 记录 Option 12 主机名 / 60 厂商类 / 61 客户端标识 / 77 用户类
+#dhcp = "log"
+
+# IPv6CP（RFC 5072，双栈光猫）: auto = PAP 回 Ack 或 CHAP 回 Success 时开 / on / off
+#ipv6cp = "on"
+#ipv6cp_iid = ""                # 我方 Interface-Identifier（16 个 hex 字符），留空按 MAC 生成
+
+# 自定义 OUI 表（每行 `aa:bb:cc,厂商名`），补充/覆盖内置的厂商识别
+#oui_file = "oui.txt"
